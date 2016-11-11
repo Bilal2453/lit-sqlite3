@@ -4,8 +4,8 @@
 -- Copyright (C) 2011-2016 Stefano Peluchetti. All rights reserved.
 --
 -- Features, documentation and more: http://www.scilua.org .
--- 
--- This file is part of the LJSQLite3 library, which is released under the MIT 
+--
+-- This file is part of the LJSQLite3 library, which is released under the MIT
 -- license: full text in file LICENSE.TXT in the library's root folder.
 --------------------------------------------------------------------------------
 
@@ -15,14 +15,30 @@
 -- TODO: Add extended error codes from Sqlite?
 -- TODO: Consider type checks?
 -- TODO: Exposed cdef constants are ok?
--- TODO: Resultset (and so exec) could be optimized by avoiding loads/stores 
+-- TODO: Resultset (and so exec) could be optimized by avoiding loads/stores
 -- TODO: of row table via _step?
 
 local ffi  = require "ffi"
 local bit  = require "bit"
-local xsys = require "xsys"
 
-local split, trim = xsys.string.split, xsys.string.trim
+---- xsys replacement ----------------------------------------------------------
+
+local insert = table.insert
+local match, gmatch = string.match, string.gmatch
+
+local function split(str, delim)
+  local words = {}
+    for word in gmatch(str .. delim, '(.-)' .. delim) do
+      insert(words, word)
+    end
+  return words
+end
+
+local function trim(str)
+  return match(str, '^%s*(.-)%s*$')
+end
+
+--------------------------------------------------------------------------------
 
 local function err(code, msg)
   error("ljsqlite3["..code.."] "..msg)
@@ -31,9 +47,9 @@ end
 -- Codes -----------------------------------------------------------------------
 local sqlconstants = {} -- SQLITE_* and OPEN_* declarations.
 local codes = {
-  [0] = "OK", "ERROR", "INTERNAL", "PERM", "ABORT", "BUSY", "LOCKED", "NOMEM", 
-  "READONLY", "INTERRUPT", "IOERR", "CORRUPT", "NOTFOUND", "FULL", "CANTOPEN", 
-  "PROTOCOL", "EMPTY", "SCHEMA", "TOOBIG", "CONSTRAINT", "MISMATCH", "MISUSE", 
+  [0] = "OK", "ERROR", "INTERNAL", "PERM", "ABORT", "BUSY", "LOCKED", "NOMEM",
+  "READONLY", "INTERRUPT", "IOERR", "CORRUPT", "NOTFOUND", "FULL", "CANTOPEN",
+  "PROTOCOL", "EMPTY", "SCHEMA", "TOOBIG", "CONSTRAINT", "MISMATCH", "MISUSE",
   "NOLFS", "AUTH", "FORMAT", "RANGE", "NOTADB", [100] = "ROW", [101] = "DONE"
 } -- From 0 to 26.
 
@@ -63,12 +79,12 @@ do
   }
 
   local t = sqlconstants
-  local pre = "static const int32_t SQLITE_"  
+  local pre = "static const int32_t SQLITE_"
   for i=0,26    do t[#t+1] = pre..codes[i].."="..i..";\n" end
-  for i=100,101 do t[#t+1] = pre..codes[i].."="..i..";\n" end  
-  for i=1,5     do t[#t+1] = pre..types[i].."="..i..";\n" end  
+  for i=100,101 do t[#t+1] = pre..codes[i].."="..i..";\n" end
+  for i=1,5     do t[#t+1] = pre..types[i].."="..i..";\n" end
   pre = pre.."OPEN_"
-  for k,v in pairs(opens) do t[#t+1] = pre..k.."="..bit.tobit(v)..";\n" end  
+  for k,v in pairs(opens) do t[#t+1] = pre..k.."="..bit.tobit(v)..";\n" end
 end
 
 -- Cdef ------------------------------------------------------------------------
@@ -94,7 +110,7 @@ int sqlite3_close(sqlite3*);
 int sqlite3_busy_timeout(sqlite3*, int ms);
 
 // Statement.
-int sqlite3_prepare_v2(sqlite3 *conn, const char *zSql, int nByte, 
+int sqlite3_prepare_v2(sqlite3 *conn, const char *zSql, int nByte,
   sqlite3_stmt **ppStmt, const char **pzTail);
 int sqlite3_step(sqlite3_stmt*);
 int sqlite3_reset(sqlite3_stmt *pStmt);
@@ -314,7 +330,7 @@ function conn_mt:close() T_open(self)
    -- Close all callbacks linked to conn.
   for _,v in pairs(conncb[self].scalar) do v:free() end
   for _,v in pairs(conncb[self].step)   do v:free() end
-  for _,v in pairs(conncb[self].final)  do v:free() end  
+  for _,v in pairs(conncb[self].final)  do v:free() end
   local code = sql.sqlite3_close(self._ptr)
   T_okcode(self._ptr, code)
   connstmt[self] = nil -- Table connstmt is not weak, need to clear manually.
@@ -409,13 +425,13 @@ local function scalarcb(name, f)
       sql.sqlite3_result_error(context, msg, #msg)
     else
       set_value(context, result)
-    end    
-  end 
+    end
+  end
   return ffi.cast("ljsqlite3_cbstep", sqlf)
 end
 
 -- Return the state for aggregate case (created via initstate()). We use the ptr
--- returned from aggregate_context() for tagging only, all the state data is 
+-- returned from aggregate_context() for tagging only, all the state data is
 -- handled from Lua side.
 local function getstate(context, initstate, size)
   -- Only pointer address relevant for indexing, size irrelevant.
@@ -441,8 +457,8 @@ local function stepcb(name, f, initstate)
     if not ok then
       local msg = "Lua registered step function "..name.." error: "..result
       sql.sqlite3_result_error(context, msg, #msg)
-    end    
-  end 
+    end
+  end
   return ffi.cast("ljsqlite3_cbstep", sqlf)
 end
 
@@ -459,7 +475,7 @@ local function finalcb(name, f, initstate)
     else
       set_value(context, result)
     end
-  end 
+  end
   return ffi.cast("ljsqlite3_cbfinal", sqlf)
 end
 
@@ -486,10 +502,10 @@ end
 conn_ct = ffi.metatype("struct { sqlite3* _ptr; bool _closed; }", conn_mt)
 
 -- Statement -------------------------------------------------------------------
-function stmt_mt:reset() T_open(self)  
-  -- Ignore possible error code, it would be repetition of error raised during 
+function stmt_mt:reset() T_open(self)
+  -- Ignore possible error code, it would be repetition of error raised during
   -- most recent evaluation of statement which would have been raised already.
-  sql.sqlite3_reset(self._ptr) 
+  sql.sqlite3_reset(self._ptr)
   self._code = sql.SQLITE_OK -- Always succeds.
   return self
 end
@@ -533,7 +549,7 @@ stmt_step = function(self, row, header)
     return nil
   else -- If code not DONE or ROW then it's error.
     E_conn(self._conn, self._code)
-  end  
+  end
 end
 stmt_mt._step = stmt_step
 
@@ -559,7 +575,7 @@ function stmt_mt:resultset(get, maxrecords) T_open(self)
     n = n + 1
     for i=1,#h do o[i][n] = r[i] end
   end
-  
+
   local out = { [0] = o[0] } -- Eventually copy colnames.
   if hasi then -- Use numeric indexes.
     for i=1,#h do out[i] = o[i] end
@@ -593,7 +609,7 @@ function stmt_mt:clearbind() T_open(self)
 end
 
 stmt_ct = ffi.metatype([[struct {
-  sqlite3_stmt* _ptr;  
+  sqlite3_stmt* _ptr;
   bool          _closed;
   sqlite3*      _conn;
   int32_t       _code;
