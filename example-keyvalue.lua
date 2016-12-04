@@ -4,7 +4,7 @@ Make sure your require paths are correct and that you have an sqlite library.
 
 Usage:
 
-local Database = require('./Database') -- path to file
+local Database = require('./example-keyvalue') -- path to this file
 
 local db = Database('test') -- open a database file by name (or create a new one)
 local tbl = db:getTable('table') -- get a table by name (or create a new one)
